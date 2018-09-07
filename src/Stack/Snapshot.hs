@@ -139,24 +139,21 @@ loadSnapshot
   :: forall env.
      (HasConfig env, HasGHCVariant env)
   => Maybe ActualCompiler -- ^ installed GHC we should query; if none provided, use the global hints
-  -> Snapshot
+  -> BuildConfig
   -> RIO env LoadedSnapshot
-loadSnapshot mcompiler =
+loadSnapshot mcompiler bc =
     start
   where
-    start = inner
-    {- FIXME enable caching
-    start sd = do
+    start = do
       path <- configLoadedSnapshotCache
-        sd
+        (bcSnapshotHash bc)
         (maybe GISSnapshotHints GISCompiler mcompiler)
-      decodeOrLoadLoadedSnapshot path (inner sd)
-    -}
+      decodeOrLoadLoadedSnapshot path inner
 
-    inner :: Snapshot -> RIO env LoadedSnapshot
-    inner snap = do
-      logInfo $ "Loading a snapshot from a Snapshot: " <> RIO.display (snapshotName snap)
-      let wc = snapshotCompiler snap
+    inner :: RIO env LoadedSnapshot
+    inner = do
+      logInfo $ "Loading a snapshot from a Snapshot: " <> "FIXME don't have that info right now" -- RIO.display (snapshotName snap)
+      let wc = bcWantedCompiler bc
       ls0 <-
           case mcompiler of
             Nothing -> do
@@ -178,18 +175,17 @@ loadSnapshot mcompiler =
       -- FIXME ridiculously overly complicated here. We want to totally ditch
       -- this "package promotion" concept, which will simplify this
       -- drastically.
-      let snapshotLocations = spLocation <$> snapshotPackages snap
-      gpds <- for (Map.elems $ spLocation <$> snapshotPackages snap) $ \loc -> do
+      gpds <- for (Map.elems $ spLocation <$> bcImmutableDeps bc) $ \loc -> do
         gpd <- loadCabalFileImmutable loc
         pure (gpd, PLImmutable loc, ())
 
       (globals, snapshot, locals) <-
         calculatePackagePromotion ls0
         gpds
-        (spFlags <$> snapshotPackages snap)
-        (spHidden <$> snapshotPackages snap)
-        (spGhcOptions <$> snapshotPackages snap)
-        (snapshotDrop snap)
+        (spFlags <$> bcImmutableDeps bc)
+        (spHidden <$> bcImmutableDeps bc)
+        (spGhcOptions <$> bcImmutableDeps bc)
+        (bcDroppedGlobals bc)
 
       return LoadedSnapshot
         { lsCompilerVersion = lsCompilerVersion ls0

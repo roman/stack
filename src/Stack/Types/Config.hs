@@ -33,6 +33,7 @@ module Stack.Types.Config
   ,explicitSetupDeps
   -- ** BuildConfig & HasBuildConfig
   ,BuildConfig(..)
+  ,SnapshotHash(..)
   ,ProjectPackage(..)
   ,DepPackage(..)
   ,ppRoot
@@ -482,12 +483,22 @@ readStyles = parseStylesUpdateFromString <$> OA.readerAsk
 -- These are the components which know nothing about local configuration.
 data BuildConfig = BuildConfig
     { bcConfig     :: !Config
-    , bcSnapshot :: !Snapshot
-      -- ^ Snapshot providing all dependencies, both from the snapshot itself
-      -- and extra-deps.
-      --
-    -- FIXME: determine if the WantedCompiler in here also takes into account
-    -- command line overrides and update this comment.
+    , bcWantedCompiler :: !WantedCompiler
+      -- ^ The compiler we want to build with
+    , bcSnapshotHash :: !SnapshotHash
+      -- ^ FIXME this is a temporary hack to avoid needing to immediately
+      -- refactor huge swaths of the codebase. It's a hash of the combo
+      -- WantedCompiler and the immutable dependencies, to provide some unique
+      -- directory names.
+    , bcSnapshotName :: !Text
+      -- ^ For display purposes only. It probably makes sense to store this
+      -- somehow better.
+    , bcImmutableDeps :: !(Map PackageName SnapshotPackage)
+      -- ^ All dependencies (snapshot and extra-deps) on immutable package.
+    , bcDroppedGlobals :: !(Set PackageName)
+      -- ^ Global packages which should not be used
+    , bcDependencies :: !(Map PackageName DepPackage) -- FIXME drop?
+      -- ^ All dependencies, both from the snapshot itself and extra-deps.
     , bcGHCVariant :: !GHCVariant
       -- ^ The variant of GHC used to select a GHC bindist.
     , bcPackages :: !(Map PackageName ProjectPackage)
@@ -537,6 +548,9 @@ data DepPackage = DepPackage
   { dpGPD' :: !(IO GenericPackageDescription)
   , dpName :: !PackageName
   , dpLocation :: !PackageLocation
+  , dpGhcOptions :: ![Text]
+  , dpFlags :: !(Map FlagName Bool)
+  , dpHidden :: !Bool
   }
 
 -- | A view of a project package needed for resolving components
@@ -580,7 +594,7 @@ ppVersion = fmap gpdVersion . ppGPD
 data LoadConfig = LoadConfig
     { lcConfig          :: !Config
       -- ^ Top-level Stack configuration.
-    , lcLoadBuildConfig :: !(Maybe WantedCompiler -> IO BuildConfig)
+    , lcLoadBuildConfig :: !(Maybe WantedCompiler -> BuildOptsCLI -> IO BuildConfig)
         -- ^ Action to load the remaining 'BuildConfig'.
     , lcProjectRoot     :: !(Maybe (Path Abs Dir))
         -- ^ The project root directory, if in a project.
@@ -1256,14 +1270,11 @@ platformSnapAndCompilerRel
     :: (MonadReader env m, HasEnvConfig env, MonadThrow m)
     => m (Path Rel Dir)
 platformSnapAndCompilerRel = do
-    SnapshotHash sha <- view $ buildConfigL.to (snapshotHash . bcSnapshot)
+    SnapshotHash sha <- view $ buildConfigL.to bcSnapshotHash
     platform <- platformGhcRelDir
     name <- parseRelDir $ T.unpack $ SHA256.toHexText sha
     ghc <- compilerVersionDir
     useShaPathOnWindows (platform </> name </> ghc)
-
-snapshotHash :: Snapshot -> SnapshotHash
-snapshotHash = undefined
 
 -- | Relative directory for the platform and GHC identifier
 platformGhcRelDir
@@ -1886,7 +1897,7 @@ stackRootL = configL.lens configStackRoot (\x y -> x { configStackRoot = y })
 -- | The compiler specified by the @SnapshotDef@. This may be
 -- different from the actual compiler used!
 wantedCompilerVersionL :: HasBuildConfig s => Getting r s WantedCompiler
-wantedCompilerVersionL = buildConfigL.to (snapshotCompiler . bcSnapshot)
+wantedCompilerVersionL = buildConfigL.to bcWantedCompiler
 
 -- | The version of the compiler which will actually be used. May be different
 -- than that specified in the snapshot (due to overrides) and returned

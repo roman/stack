@@ -342,7 +342,7 @@ checkSnapBuildPlan
     -> RIO env BuildPlanCheck
 checkSnapBuildPlan gpds flags snapshotDef mactualCompiler = do
     platform <- view platformL
-    rs <- loadSnapshot mactualCompiler snapshotDef
+    rs <- loadSnapshot mactualCompiler undefined -- snapshotDef
 
     let
         compiler = lsCompilerVersion rs

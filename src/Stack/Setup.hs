@@ -258,9 +258,7 @@ setupEnv mResolveMissingGHC = do
     let bcPath :: BuildConfig
         bcPath = set processContextL menv bc
 
-    ls <- runRIO bcPath $ loadSnapshot
-      (Just compilerVer)
-      (bcSnapshot bc)
+    ls <- runRIO bcPath $ loadSnapshot (Just compilerVer) bc
     let envConfig0 = EnvConfig
             { envConfigBuildConfig = bc
             , envConfigCabalVersion = cabalVer
@@ -1344,7 +1342,7 @@ loadGhcjsEnvConfig stackYaml binPath inner = do
         })
       Nothing
       (SYLOverride stackYaml) $ \lc -> do
-        bconfig <- liftIO $ lcLoadBuildConfig lc Nothing
+        bconfig <- liftIO $ lcLoadBuildConfig lc Nothing defaultBuildOptsCLI
         envConfig <- runRIO bconfig $ setupEnv Nothing
         inner envConfig
 

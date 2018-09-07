@@ -8,6 +8,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 
 -- | The general Stack configuration that starts everything off. This should
@@ -71,7 +72,7 @@ import           Stack.Config.Nix
 import           Stack.Config.Urls
 import           Stack.Constants
 import qualified Stack.Image as Image
-import           Stack.Package (mkProjectPackage, mkDepPackage)
+import           Stack.Package (mkProjectPackage)
 import           Stack.Snapshot
 import           Stack.Types.Config
 import           Stack.Types.Docker
@@ -485,7 +486,7 @@ loadConfigMaybeProject configArgs mresolver mproject inner = do
 
       inner LoadConfig
           { lcConfig          = config
-          , lcLoadBuildConfig = runRIO config . loadBuildConfig mproject mresolver
+          , lcLoadBuildConfig = \x y -> runRIO config $ loadBuildConfig mproject mresolver x y
           , lcProjectRoot     =
               case mprojectRoot of
                 LCSProject fp -> Just fp
@@ -510,11 +511,13 @@ loadConfig configArgs mresolver mstackYaml inner =
 
 -- | Load the build configuration, adds build-specific values to config loaded by @loadConfig@.
 -- values.
-loadBuildConfig :: LocalConfigStatus (Project, Path Abs File, ConfigMonoid)
-                -> Maybe AbstractResolver -- override resolver
-                -> Maybe WantedCompiler -- override compiler
-                -> RIO Config BuildConfig
-loadBuildConfig mproject maresolver mcompiler = do
+loadBuildConfig
+  :: LocalConfigStatus (Project, Path Abs File, ConfigMonoid)
+  -> Maybe AbstractResolver -- override resolver
+  -> Maybe WantedCompiler -- override compiler
+  -> BuildOptsCLI
+  -> RIO Config BuildConfig
+loadBuildConfig mproject maresolver mcompiler boptsCLI = do
     config <- ask
 
     -- If provided, turn the AbstractResolver from the command line
@@ -582,7 +585,7 @@ loadBuildConfig mproject maresolver mcompiler = do
             { projectResolver = fromMaybe (projectResolver project') mresolver
             }
 
-    sd <- runRIO config $ loadResolver (projectResolver project) mcompiler
+    sd0 <- runRIO config $ loadResolver (projectResolver project) mcompiler
 
     extraPackageDBs <- mapM resolveDir' (projectExtraPackageDBs project)
 
@@ -591,6 +594,46 @@ loadBuildConfig mproject maresolver mcompiler = do
       let resolved = ResolvedPath fp abs'
       pp <- mkProjectPackage YesPrintWarnings resolved
       pure (ppName pp, pp)
+
+    let (depsMutable, depsImmutable0) = partitionEithers $
+          map
+            (\pl ->
+              case pl of
+                PLMutable x -> Left x
+                PLImmutable y -> Right y)
+            (projectDependencies project)
+
+    (depsImmutable1,
+      AddPackagesConfig
+        { apcFlags = unusedFlags0
+        , apcGhcOptions = unusedOptions0
+        }) <-
+      addPackagesToSnapshot
+        (fromString $ toFilePath stackYamlFP)
+        depsImmutable0
+        AddPackagesConfig
+          { apcDrop = mempty -- not supported in stack.yaml
+          , apcFlags = Map.union
+              (boptsCLIFlagsByName boptsCLI)
+              (projectFlags project)
+          , apcHiddens = mempty -- not supported in stack.yaml
+          , apcGhcOptions = configGhcOptionsByName config
+          }
+        (snapshotPackages sd0)
+
+    undefined $ Map.findWithDefault mempty ACFAllProjectPackages (boptsCLIFlags boptsCLI) -- FIXME apply no-package-name flags
+    undefined $ configGhcOptionsByCat config -- FIXME apply all of the special GHC options like $everything
+    undefined $ boptsCLIGhcOptions boptsCLI -- FIXME apply CLI options, just to targets???
+
+    depsImmutable2 <- flip Map.traverseWithKey depsImmutable1 $ \name sp -> do
+      pure DepPackage
+        { dpGPD' = undefined
+        , dpName = name
+        , dpLocation = PLImmutable $ spLocation sp
+        , dpGhcOptions = spGhcOptions sp
+        , dpFlags = spFlags sp
+        , dpHidden = spHidden sp
+        }
 
     deps <- forM (projectDependencies project) $ \plp -> do
       dp <- mkDepPackage plp
@@ -602,7 +645,14 @@ loadBuildConfig mproject maresolver mcompiler = do
 
     return BuildConfig
         { bcConfig = config
-        , bcSnapshot = undefined -- FIXME make sure we have command line flags and GHC options included, strip out any packages that conflict with project packages, include extra-deps
+        , bcWantedCompiler = snapshotCompiler sd0
+        , bcSnapshotName = snapshotName sd0
+        , bcSnapshotHash = SnapshotHash $ SHA256.hashBytes $ encodeUtf8 $ T.pack $ show (snapshotCompiler sd0, depsImmutable1)
+        , bcImmutableDeps = depsImmutable1
+        , bcDroppedGlobals = snapshotDrop sd0
+        , bcDependencies = Map.union -- TODO warn on duplicates
+            (error "depsMutable")
+            depsImmutable2
         , bcGHCVariant = configGHCVariantDefault config
         , bcPackages = Map.fromList packages
         , bcExtraPackageDBs = extraPackageDBs
@@ -635,6 +685,30 @@ loadBuildConfig mproject maresolver mcompiler = do
         , projectExtraPackageDBs = []
         , projectCurator = Nothing
         }
+
+-- | Create a 'DepPackage' from a 'PackageLocation'
+mkDepPackage
+  :: forall env. (HasPantryConfig env, HasLogFunc env, HasProcessContext env)
+  => PackageLocation
+  -> RIO env DepPackage
+mkDepPackage pl = do
+  (name, gpdio) <-
+    case pl of
+      PLMutable dir -> do
+        (gpdio, name, _cabalfp) <- loadCabalFilePath (resolvedAbsolute dir)
+        pure (name, gpdio NoPrintWarnings)
+      PLImmutable pli -> do
+        PackageIdentifier name _ <- getPackageLocationIdent pli
+        run <- askRunInIO
+        pure (name, run $ loadCabalFileImmutable pli)
+  return DepPackage
+    { dpGPD' = gpdio
+    , dpLocation = pl
+    , dpName = name
+    , dpGhcOptions = undefined
+    , dpFlags = undefined
+    , dpHidden = undefined
+    }
 
 -- | Check if there are any duplicate package names and, if so, throw an
 -- exception.

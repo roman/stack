@@ -223,7 +223,7 @@ constructPlan ls0 baseConfigOpts0 locals extraToBuild0 localDumpPkgs loadPackage
     hasBaseInDeps bconfig =
       Map.member
         (mkPackageName "base")
-        (snapshotPackages $ bcSnapshot bconfig)
+        (bcDependencies bconfig)
 
     mkCtx econfig = Ctx
         { ls = ls0

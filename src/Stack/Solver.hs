@@ -468,7 +468,7 @@ getResolverConstraints
          (ActualCompiler,
           Map PackageName (Version, Map FlagName Bool))
 getResolverConstraints mcompilerVersion sd = do
-    ls <- loadSnapshot mcompilerVersion sd
+    ls <- loadSnapshot mcompilerVersion undefined -- sd
     return (lsCompilerVersion ls, lsConstraints ls)
   where
     lpiConstraints lpi = (lpiVersion lpi, lpiFlags lpi)
@@ -631,7 +631,7 @@ solveExtraDeps modStackYaml = do
     let gpds              = Map.elems $ fmap snd bundle
         oldFlags          = undefined -- bcFlags bconfig
     oldExtraVersions <- for deps $ fmap gpdVersion . liftIO . dpGPD'
-    let sd                = bcSnapshot bconfig
+    let sd                = undefined -- bcSnapshot bconfig
         resolver          = undefined -- sdResolver sd
         oldSrcs           = gpdPackages gpds
         oldSrcFlags       = Map.intersection oldFlags oldSrcs

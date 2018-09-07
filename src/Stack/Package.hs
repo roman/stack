@@ -25,7 +25,6 @@ module Stack.Package
   ,resolvePackageDescription
   ,packageDependencies
   ,mkProjectPackage
-  ,mkDepPackage
   ) where
 
 import qualified Data.ByteString.Lazy.Char8 as CL8
@@ -1354,25 +1353,4 @@ mkProjectPackage printWarnings dir = do
     , ppResolvedDir = dir
     , ppName = name
     , ppFlags = mempty
-    }
-
--- | Create a 'DepPackage' from a 'PackageLocation'
-mkDepPackage
-  :: forall env. (HasPantryConfig env, HasLogFunc env, HasProcessContext env)
-  => PackageLocation
-  -> RIO env DepPackage
-mkDepPackage pl = do
-  (name, gpdio) <-
-    case pl of
-      PLMutable dir -> do
-        (gpdio, name, _cabalfp) <- loadCabalFilePath (resolvedAbsolute dir)
-        pure (name, gpdio NoPrintWarnings)
-      PLImmutable pli -> do
-        PackageIdentifier name _ <- getPackageLocationIdent pli
-        run <- askRunInIO
-        pure (name, run $ loadCabalFileImmutable pli)
-  return DepPackage
-    { dpGPD' = gpdio
-    , dpLocation = pl
-    , dpName = name
     }

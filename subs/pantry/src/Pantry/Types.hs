@@ -1623,6 +1623,7 @@ data SnapshotPackage = SnapshotPackage
   , spGhcOptions :: ![Text]
   -- ^ Same as 'slGhcOptions'
   }
+  deriving Show
 
 -- | A single layer of a snapshot, i.e. a specific YAML configuration file.
 --
