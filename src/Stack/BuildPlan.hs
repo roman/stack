@@ -337,7 +337,7 @@ checkSnapBuildPlan
     :: (HasConfig env, HasGHCVariant env)
     => [GenericPackageDescription]
     -> Maybe (Map PackageName (Map FlagName Bool))
-    -> SnapshotDef
+    -> Snapshot
     -> Maybe ActualCompiler
     -> RIO env BuildPlanCheck
 checkSnapBuildPlan gpds flags snapshotDef mactualCompiler = do
@@ -373,7 +373,7 @@ selectBestSnapshot
     :: (HasConfig env, HasGHCVariant env)
     => [GenericPackageDescription]
     -> NonEmpty SnapName
-    -> RIO env (SnapshotDef, BuildPlanCheck)
+    -> RIO env (Snapshot, BuildPlanCheck)
 selectBestSnapshot gpds snaps = do
     logInfo $ "Selecting the best among "
                <> displayShow (NonEmpty.length snaps)
@@ -400,15 +400,15 @@ selectBestSnapshot gpds snaps = do
           | otherwise = (s2, r2)
 
         reportResult BuildPlanCheckOk {} snap = do
-            logInfo $ "* Matches " <> RIO.display (sdResolverName snap)
+            logInfo $ "* Matches " <> RIO.display (snapshotName snap)
             logInfo ""
 
         reportResult r@BuildPlanCheckPartial {} snap = do
-            logWarn $ "* Partially matches " <> RIO.display (sdResolverName snap)
+            logWarn $ "* Partially matches " <> RIO.display (snapshotName snap)
             logWarn $ RIO.display $ indent $ T.pack $ show r
 
         reportResult r@BuildPlanCheckFail {} snap = do
-            logWarn $ "* Rejected " <> RIO.display (sdResolverName snap)
+            logWarn $ "* Rejected " <> RIO.display (snapshotName snap)
             logWarn $ RIO.display $ indent $ T.pack $ show r
 
         indent t = T.unlines $ fmap ("    " <>) (T.lines t)

@@ -53,6 +53,8 @@ freeze (FreezeOpts FreezeProject) = do
     Nothing -> logWarn "No project was found: nothing to freeze"
 
 freeze (FreezeOpts FreezeSnapshot) = do
+  undefined
+  {-
   msnapshot <- view $ buildConfigL.to bcSnapshotDef.to sdSnapshot
   case msnapshot of
     Just (snap, _) -> do
@@ -64,3 +66,4 @@ freeze (FreezeOpts FreezeSnapshot) = do
         liftIO $ B.putStr $ Yaml.encode snap'
     Nothing ->
       logWarn "No snapshot was found: nothing to freeze"
+  -}

@@ -10,17 +10,13 @@
 -- | Shared types for various stackage packages.
 module Stack.Types.BuildPlan
     ( -- * Types
-      SnapshotDef (..)
-    , snapshotDefVC
-    , ExeName (..)
+      ExeName (..)
     , LoadedSnapshot (..)
     , loadedSnapshotVC
     , LoadedPackageInfo (..)
     , C.ModuleName
     , ModuleInfo (..)
     , moduleInfoVC
-    , sdSnapshots
-    , sdResolverName
     ) where
 
 import qualified Data.Map as Map
@@ -33,42 +29,6 @@ import           Stack.Prelude
 import           Stack.Types.Compiler
 import           Stack.Types.GhcPkgId
 import           Stack.Types.VersionIntervals
-
--- | A definition of a snapshot. This could be a Stackage snapshot or
--- something custom. It does not include information on the global
--- package database, this is added later.
---
--- It may seem more logic to attach flags, options, etc, directly with
--- the desired package. However, this isn't possible yet: our
--- definition may contain tarballs or Git repos, and we don't actually
--- know the package names contained there. Therefore, we capture all
--- of this additional information by package name, and later in the
--- snapshot load step we will resolve the contents of tarballs and
--- repos, figure out package names, and assigned values appropriately.
-data SnapshotDef = SnapshotDef -- To be removed as part of https://github.com/commercialhaskell/stack/issues/3922
-    { sdResolver        :: !SnapshotLocation
-    , sdSnapshot        :: !(Maybe (Snapshot, SnapshotDef))
-    , sdWantedCompilerVersion :: !WantedCompiler
-    , sdUniqueHash :: !SHA256
-    }
-    deriving (Show, Eq, Data, Generic, Typeable)
-instance Store SnapshotDef
-instance NFData SnapshotDef
-
-sdResolverName :: SnapshotDef -> Text
-sdResolverName sd =
-  case sdSnapshot sd of
-    Nothing -> utf8BuilderToText $ display $ sdWantedCompilerVersion sd
-    Just (snapshot, _) -> snapshotName snapshot
-
-sdSnapshots :: SnapshotDef -> [Snapshot]
-sdSnapshots sd =
-  case sdSnapshot sd of
-    Nothing -> []
-    Just (snap, sd') -> snap : sdSnapshots sd'
-
-snapshotDefVC :: VersionConfig SnapshotDef
-snapshotDefVC = storeVersionConfig "sd-v3" "MpkgNx8qOHakJTSePR1czDElNiU="
 
 -- | Name of an executable.
 newtype ExeName = ExeName { unExeName :: Text }

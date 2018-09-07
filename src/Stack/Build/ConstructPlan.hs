@@ -220,7 +220,10 @@ constructPlan ls0 baseConfigOpts0 locals extraToBuild0 localDumpPkgs loadPackage
             prettyErrorNoIndent $ pprintExceptions errs stackYaml stackRoot parents (wanted ctx)
             throwM $ ConstructPlanFailed "Plan construction failed."
   where
-    hasBaseInDeps bconfig = Map.member (mkPackageName "base") (bcDependencies bconfig)
+    hasBaseInDeps bconfig =
+      Map.member
+        (mkPackageName "base")
+        (snapshotPackages $ bcSnapshot bconfig)
 
     mkCtx econfig = Ctx
         { ls = ls0

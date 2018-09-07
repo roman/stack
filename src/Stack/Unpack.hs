@@ -31,7 +31,7 @@ instance Show UnpackException where
 -- | Intended to work for the command line command.
 unpackPackages
   :: forall env. (HasPantryConfig env, HasLogFunc env, HasProcessContext env)
-  => Maybe SnapshotDef -- ^ when looking up by name, take from this build plan
+  => Maybe Snapshot -- ^ when looking up by name, take from this Snapshot
   -> Path Abs Dir -- ^ destination
   -> [String] -- ^ names or identifiers
   -> RIO env ()
@@ -93,16 +93,14 @@ unpackPackages mSnapshotDef dest input = do
           , PackageIdentifier name ver
           )
 
-    toLocSnapshot :: SnapshotDef -> PackageName -> RIO env (Either String (PackageLocationImmutable, PackageIdentifier))
-    toLocSnapshot sd name =
-        go $ concatMap snapshotLocations $ sdSnapshots sd
-      where
-        go [] = pure $ Left $ "Package does not appear in snapshot: " ++ packageNameString name
-        go (loc:locs) = do
-          ident@(PackageIdentifier name' _) <- getPackageLocationIdent loc
-          if name == name'
-            then pure $ Right (loc, ident)
-            else go locs
+    toLocSnapshot :: Snapshot -> PackageName -> RIO env (Either String (PackageLocationImmutable, PackageIdentifier))
+    toLocSnapshot snap name =
+        case Map.lookup name $ snapshotPackages snap of
+          Nothing -> pure $ Left $ "Package does not appear in snapshot: " ++ packageNameString name
+          Just sp -> do
+            let loc = spLocation sp
+            ident <- getPackageLocationIdent loc
+            pure $ Right (loc, ident)
 
     -- Possible future enhancement: parse names as name + version range
     parse s =

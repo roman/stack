@@ -121,90 +121,75 @@ instance Show SnapshotException where
     , e
     ]
 
--- | Convert a 'Resolver' into a 'SnapshotDef'
+-- | Convert a 'Resolver' into a 'Snapshot'
 loadResolver
   :: forall env. HasConfig env
   => SnapshotLocation
   -> Maybe WantedCompiler
-  -> RIO env SnapshotDef
+  -> RIO env Snapshot
 loadResolver (SLCompiler c1) (Just c2) = throwIO $ InvalidOverrideCompiler c1 c2
 loadResolver sl mcompiler = do
-  esnap <- Pantry.loadSnapshot sl
-  (compiler, msnap, uniqueHash) <-
-    case esnap of
-      Left compiler -> pure (compiler, Nothing, mkUniqueHash compiler)
-      Right (snap, sha) -> do
-        sd <- loadResolver (snapshotParent snap) (snapshotCompiler snap)
-        pure
-          ( sdWantedCompilerVersion sd
-          , Just (snap, sd)
-          , combineHashes sha $ sdUniqueHash sd
-          )
-  pure SnapshotDef
-    { sdResolver = sl
-    , sdSnapshot = msnap
-    , sdWantedCompilerVersion = fromMaybe compiler mcompiler
-    , sdUniqueHash = uniqueHash
+  snap <- Pantry.loadSnapshot sl
+  pure snap
+    { snapshotCompiler = fromMaybe (snapshotCompiler snap) mcompiler
     }
-
-  where
-
-    mkUniqueHash :: WantedCompiler -> SHA256
-    mkUniqueHash = SHA256.hashLazyBytes . toLazyByteString . getUtf8Builder . RIO.display
-
-    combineHashes :: SHA256 -> SHA256 -> SHA256
-    combineHashes x y = SHA256.hashBytes (SHA256.toRaw x <> SHA256.toRaw y)
 
 -- | Fully load up a 'SnapshotDef' into a 'LoadedSnapshot'
 loadSnapshot
   :: forall env.
      (HasConfig env, HasGHCVariant env)
   => Maybe ActualCompiler -- ^ installed GHC we should query; if none provided, use the global hints
-  -> SnapshotDef
+  -> Snapshot
   -> RIO env LoadedSnapshot
 loadSnapshot mcompiler =
     start
   where
+    start = inner
+    {- FIXME enable caching
     start sd = do
       path <- configLoadedSnapshotCache
         sd
         (maybe GISSnapshotHints GISCompiler mcompiler)
       decodeOrLoadLoadedSnapshot path (inner sd)
+    -}
 
-    inner :: SnapshotDef -> RIO env LoadedSnapshot
-    inner sd = do
-      logInfo $ "Loading a snapshot from a SnapshotDef: " <> RIO.display (sdResolverName sd)
-      case sdSnapshot sd of
-        Nothing ->
+    inner :: Snapshot -> RIO env LoadedSnapshot
+    inner snap = do
+      logInfo $ "Loading a snapshot from a Snapshot: " <> RIO.display (snapshotName snap)
+      let wc = snapshotCompiler snap
+      ls0 <-
           case mcompiler of
             Nothing -> do
               ghfp <- globalHintsFile
-              mglobalHints <- loadGlobalHints ghfp $ sdWantedCompilerVersion sd
+              mglobalHints <- loadGlobalHints ghfp wc
               globalHints <-
                 case mglobalHints of
                   Just x -> pure x
                   Nothing -> do
-                    logWarn $ "Unable to load global hints for " <> RIO.display (sdWantedCompilerVersion sd)
+                    logWarn $ "Unable to load global hints for " <> RIO.display wc
                     pure mempty
               return LoadedSnapshot
-                { lsCompilerVersion = wantedToActual $ sdWantedCompilerVersion sd
+                { lsCompilerVersion = wantedToActual wc
                 , lsGlobals = fromGlobalHints globalHints
                 , lsPackages = Map.empty
                 }
             Just cv' -> loadCompiler cv'
-        Just (snapshot, sd') -> start sd' >>= inner2 snapshot
 
-    inner2 snap ls0 = do
-      gpds <-
-        forM (snapshotLocations snap) $ \loc -> (, PLImmutable loc) <$> loadCabalFileImmutable loc
+      -- FIXME ridiculously overly complicated here. We want to totally ditch
+      -- this "package promotion" concept, which will simplify this
+      -- drastically.
+      let snapshotLocations = spLocation <$> snapshotPackages snap
+      gpds <- for (Map.elems $ spLocation <$> snapshotPackages snap) $ \loc -> do
+        gpd <- loadCabalFileImmutable loc
+        pure (gpd, PLImmutable loc, ())
 
       (globals, snapshot, locals) <-
         calculatePackagePromotion ls0
-        (map (\(x, y) -> (x, y, ())) gpds)
-        (snapshotFlags snap)
-        (snapshotHidden snap)
-        (snapshotGhcOptions snap)
-        (snapshotDropPackages snap)
+        gpds
+        (spFlags <$> snapshotPackages snap)
+        (spHidden <$> snapshotPackages snap)
+        (spGhcOptions <$> snapshotPackages snap)
+        (snapshotDrop snap)
 
       return LoadedSnapshot
         { lsCompilerVersion = lsCompilerVersion ls0

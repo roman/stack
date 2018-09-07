@@ -459,7 +459,7 @@ parseTargets needTargets boptscli = do
   ls0 <- view loadedSnapshotL
   workingDir <- getCurrentDir
   locals <- view $ buildConfigL.to bcPackages
-  deps <- view $ buildConfigL.to bcDependencies
+  deps <- undefined -- view $ buildConfigL.to bcDependencies
   let globals = lsGlobals ls0
       snap = lsPackages ls0
       (textTargets', rawInput) = getRawInput boptscli locals
@@ -489,9 +489,13 @@ parseTargets needTargets boptscli = do
 
   let dropMaybeKey (Nothing, _) = Map.empty
       dropMaybeKey (Just key, value) = Map.singleton key value
+
+      flags = undefined
+      {- FIXME make sure this makes its way into Stack.Config
       flags = Map.unionWith Map.union
         (Map.unions (map dropMaybeKey (Map.toList (boptsCLIFlags boptscli))))
         (bcFlags bconfig)
+      -}
       hides = Map.empty -- not supported to add hidden packages
 
       -- We promote packages to the local database if the GHC options

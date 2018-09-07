@@ -1353,6 +1353,7 @@ mkProjectPackage printWarnings dir = do
     , ppGPD' = gpd printWarnings
     , ppResolvedDir = dir
     , ppName = name
+    , ppFlags = mempty
     }
 
 -- | Create a 'DepPackage' from a 'PackageLocation'

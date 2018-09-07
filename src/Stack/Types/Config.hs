@@ -482,17 +482,16 @@ readStyles = parseStylesUpdateFromString <$> OA.readerAsk
 -- These are the components which know nothing about local configuration.
 data BuildConfig = BuildConfig
     { bcConfig     :: !Config
-    , bcSnapshotDef :: !SnapshotDef
-      -- ^ Build plan wanted for this build
+    , bcSnapshot :: !Snapshot
+      -- ^ Snapshot providing all dependencies, both from the snapshot itself
+      -- and extra-deps.
+      --
+    -- FIXME: determine if the WantedCompiler in here also takes into account
+    -- command line overrides and update this comment.
     , bcGHCVariant :: !GHCVariant
       -- ^ The variant of GHC used to select a GHC bindist.
     , bcPackages :: !(Map PackageName ProjectPackage)
-      -- ^ Local packages
-    , bcDependencies :: !(Map PackageName DepPackage)
-      -- ^ Extra dependencies specified in configuration.
-      --
-      -- These dependencies will not be installed to a shared location, and
-      -- will override packages provided by the resolver.
+      -- ^ Project packages (non-dependencies)
     , bcExtraPackageDBs :: ![Path Abs Dir]
       -- ^ Extra package databases
     , bcStackYaml  :: !(Path Abs File)
@@ -501,8 +500,6 @@ data BuildConfig = BuildConfig
       -- Note: if the STACK_YAML environment variable is used, this may be
       -- different from projectRootL </> "stack.yaml" if a different file
       -- name is used.
-    , bcFlags      :: !(Map PackageName (Map FlagName Bool))
-      -- ^ Per-package flag overrides
     , bcImplicitGlobal :: !Bool
       -- ^ Are we loading from the implicit global stack.yaml? This is useful
       -- for providing better error messages.
@@ -528,7 +525,7 @@ data EnvConfig = EnvConfig
     -- @stack list-dependencies | grep Cabal@ in the stack project.
     ,envConfigCompilerVersion :: !ActualCompiler
     -- ^ The actual version of the compiler to be used, as opposed to
-    -- 'wantedCompilerL', which provides the version specified by the
+    -- 'wantedCompileVersionL', which provides the version specified by the
     -- build plan.
     ,envConfigCompilerBuild :: !CompilerBuild
     ,envConfigLoadedSnapshot :: !LoadedSnapshot
@@ -548,6 +545,8 @@ data ProjectPackage = ProjectPackage
     , ppResolvedDir :: !(ResolvedPath Dir)
     , ppGPD' :: !(IO GenericPackageDescription)
     , ppName :: !PackageName
+    , ppFlags :: !(Map FlagName Bool)
+    -- FIXME include as well: ppGhcOptions :: ![Text]
     }
 
 ppGPD :: MonadIO m => ProjectPackage -> m GenericPackageDescription
@@ -597,12 +596,12 @@ data Project = Project
     -- ^ Packages which are actually part of the project (as opposed
     -- to dependencies).
     , projectDependencies :: ![PackageLocation]
-    -- ^ Dependencies defined within the stack.yaml file, to be
+    -- ^ Dependencies defined within the stack.yaml file as extra-deps, to be
     -- applied on top of the snapshot.
     , projectFlags :: !(Map PackageName (Map FlagName Bool))
     -- ^ Flags to be applied on top of the snapshot flags.
     , projectResolver :: !SnapshotLocation
-    -- ^ How we resolve which @SnapshotDef@ to use
+    -- ^ How we resolve which @Snapshot@ to use
     , projectCompiler :: !(Maybe WantedCompiler)
     -- ^ Override the compiler in 'projectResolver'
     , projectExtraPackageDBs :: ![FilePath]
@@ -1257,11 +1256,14 @@ platformSnapAndCompilerRel
     :: (MonadReader env m, HasEnvConfig env, MonadThrow m)
     => m (Path Rel Dir)
 platformSnapAndCompilerRel = do
-    sd <- view snapshotDefL
+    SnapshotHash sha <- view $ buildConfigL.to (snapshotHash . bcSnapshot)
     platform <- platformGhcRelDir
-    name <- parseRelDir $ T.unpack $ SHA256.toHexText $ sdUniqueHash sd
+    name <- parseRelDir $ T.unpack $ SHA256.toHexText sha
     ghc <- compilerVersionDir
     useShaPathOnWindows (platform </> name </> ghc)
+
+snapshotHash :: Snapshot -> SnapshotHash
+snapshotHash = undefined
 
 -- | Relative directory for the platform and GHC identifier
 platformGhcRelDir
@@ -1349,16 +1351,18 @@ flagCacheLocal = do
     root <- installationRootLocal
     return $ root </> relDirFlagCache
 
+newtype SnapshotHash = SnapshotHash SHA256 -- FIXME probably get rid of this
+
 -- | Where to store 'LoadedSnapshot' caches
 configLoadedSnapshotCache
   :: (MonadThrow m, MonadReader env m, HasConfig env, HasGHCVariant env)
-  => SnapshotDef
+  => SnapshotHash
   -> GlobalInfoSource
   -> m (Path Abs File)
-configLoadedSnapshotCache sd gis = do
+configLoadedSnapshotCache (SnapshotHash sha) gis = do
     root <- view stackRootL
     platform <- platformGhcVerOnlyRelDir
-    file <- parseRelFile $ T.unpack (SHA256.toHexText $ sdUniqueHash sd) ++ ".cache"
+    file <- parseRelFile $ T.unpack (SHA256.toHexText sha) ++ ".cache"
     gis' <- parseRelDir $
           case gis of
             GISSnapshotHints -> "__snapshot_hints__"
@@ -1882,20 +1886,15 @@ stackRootL = configL.lens configStackRoot (\x y -> x { configStackRoot = y })
 -- | The compiler specified by the @SnapshotDef@. This may be
 -- different from the actual compiler used!
 wantedCompilerVersionL :: HasBuildConfig s => Getting r s WantedCompiler
-wantedCompilerVersionL = snapshotDefL.to sdWantedCompilerVersion
+wantedCompilerVersionL = buildConfigL.to (snapshotCompiler . bcSnapshot)
 
--- | The version of the compiler which will actually be used. May be
--- different than that specified in the 'SnapshotDef' and returned
+-- | The version of the compiler which will actually be used. May be different
+-- than that specified in the snapshot (due to overrides) and returned
 -- by 'wantedCompilerVersionL'.
 actualCompilerVersionL :: HasEnvConfig s => Lens' s ActualCompiler
 actualCompilerVersionL = envConfigL.lens
     envConfigCompilerVersion
     (\x y -> x { envConfigCompilerVersion = y })
-
-snapshotDefL :: HasBuildConfig s => Lens' s SnapshotDef
-snapshotDefL = buildConfigL.lens
-    bcSnapshotDef
-    (\x y -> x { bcSnapshotDef = y })
 
 buildOptsL :: HasConfig s => Lens' s BuildOpts
 buildOptsL = configL.lens

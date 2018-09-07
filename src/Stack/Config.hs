@@ -602,13 +602,11 @@ loadBuildConfig mproject maresolver mcompiler = do
 
     return BuildConfig
         { bcConfig = config
-        , bcSnapshotDef = sd
+        , bcSnapshot = undefined -- FIXME make sure we have command line flags and GHC options included, strip out any packages that conflict with project packages, include extra-deps
         , bcGHCVariant = configGHCVariantDefault config
         , bcPackages = Map.fromList packages
-        , bcDependencies = Map.fromList deps
         , bcExtraPackageDBs = extraPackageDBs
         , bcStackYaml = stackYamlFP
-        , bcFlags = projectFlags project
         , bcImplicitGlobal =
             case mproject of
                 LCSNoProject -> True

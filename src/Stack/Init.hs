@@ -114,7 +114,7 @@ initProject whichCmd currDir initOpts mresolver = do
             , projectPackages = RelFilePath . T.pack <$> pkgs
             , projectDependencies = deps
             , projectFlags = removeSrcPkgDefaultFlags gpds flags
-            , projectResolver = sdResolver sd
+            , projectResolver = undefined -- sdResolver sd
             , projectCompiler = Nothing
             , projectExtraPackageDBs = []
             , projectCurator = Nothing
@@ -133,7 +133,7 @@ initProject whichCmd currDir initOpts mresolver = do
         toPkg dir = makeRelDir dir
         indent t = T.unlines $ fmap ("    " <>) (T.lines t)
 
-    logInfo $ "Initialising configuration using resolver: " <> display (sdResolverName sd)
+    logInfo $ "Initialising configuration using resolver: " <> display (snapshotName sd)
     logInfo $ "Total number of user packages considered: "
                <> display (Map.size bundle + length dupPkgs)
 
@@ -334,7 +334,7 @@ getDefaultResolver
     -> Map PackageName (Path Abs File, C.GenericPackageDescription)
        -- ^ Src package name: cabal dir, cabal package description
     -> RIO env
-         ( SnapshotDef
+         ( Snapshot
          , Map PackageName (Map FlagName Bool)
          , Map PackageName Version
          , Map PackageName (Path Abs File, C.GenericPackageDescription))
@@ -362,9 +362,9 @@ getWorkingResolverPlan
     -> InitOpts
     -> Map PackageName (Path Abs File, C.GenericPackageDescription)
        -- ^ Src package name: cabal dir, cabal package description
-    -> SnapshotDef
+    -> Snapshot
     -> RIO env
-         ( SnapshotDef
+         ( Snapshot
          , Map PackageName (Map FlagName Bool)
          , Map PackageName Version
          , Map PackageName (Path Abs File, C.GenericPackageDescription))
@@ -373,7 +373,7 @@ getWorkingResolverPlan
        --   , Extra dependencies
        --   , Src packages actually considered)
 getWorkingResolverPlan whichCmd initOpts bundle sd = do
-    logInfo $ "Selected resolver: " <> display (sdResolverName sd)
+    logInfo $ "Selected resolver: " <> display (snapshotName sd)
     go bundle
     where
         go info = do
@@ -413,7 +413,7 @@ checkBundleResolver
     -> InitOpts
     -> Map PackageName (Path Abs File, C.GenericPackageDescription)
        -- ^ Src package name: cabal dir, cabal package description
-    -> SnapshotDef
+    -> Snapshot
     -> RIO env
          (Either [PackageName] ( Map PackageName (Map FlagName Bool)
                                , Map PackageName Version))
@@ -437,19 +437,19 @@ checkBundleResolver whichCmd initOpts bundle sd = do
                         warnPartial result
                         logWarn "*** Omitting packages with unsatisfied dependencies"
                         return $ Left $ failedUserPkgs e
-                    else throwM $ ResolverPartial whichCmd (sdResolverName sd) (show result)
+                    else throwM $ ResolverPartial whichCmd (snapshotName sd) (show result)
         BuildPlanCheckFail _ e _
             | omitPackages initOpts -> do
                 logWarn $ "*** Resolver compiler mismatch: "
-                           <> display (sdResolverName sd)
+                           <> display (snapshotName sd)
                 logWarn $ display $ indent $ T.pack $ show result
                 return $ Left $ failedUserPkgs e
-            | otherwise -> throwM $ ResolverMismatch whichCmd (sdResolverName sd) (show result)
+            | otherwise -> throwM $ ResolverMismatch whichCmd (snapshotName sd) (show result)
     where
-      resolver = sdResolver sd
+      resolver = undefined -- sdResolver sd
       indent t  = T.unlines $ fmap ("    " <>) (T.lines t)
       warnPartial res = do
-          logWarn $ "*** Resolver " <> display (sdResolverName sd)
+          logWarn $ "*** Resolver " <> display (snapshotName sd)
                       <> " will need external packages: "
           logWarn $ display $ indent $ T.pack $ show res
 

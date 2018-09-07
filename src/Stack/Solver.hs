@@ -346,7 +346,7 @@ mergeConstraints = Map.mergeWithKey
 solveResolverSpec
     :: (HasConfig env, HasGHCVariant env)
     => [Path Abs Dir] -- ^ package dirs containing cabal files
-    -> ( SnapshotDef
+    -> ( Snapshot
        , ConstraintSpec
        , ConstraintSpec) -- ^ ( resolver
                          --   , src package constraints
@@ -358,8 +358,8 @@ solveResolverSpec
 
 solveResolverSpec cabalDirs
                   (sd, srcConstraints, extraConstraints) = do
-  logInfo $ "Using resolver: " <> RIO.display (sdResolverName sd)
-  let wantedCompilerVersion = sdWantedCompilerVersion sd
+  logInfo $ "Using resolver: " <> RIO.display (snapshotName sd)
+  let wantedCompilerVersion = snapshotCompiler sd
   setupCabalEnv wantedCompilerVersion $ \compilerVersion -> do
     (compilerVer, snapConstraints) <- getResolverConstraints (Just compilerVersion) sd
 
@@ -376,7 +376,7 @@ solveResolverSpec cabalDirs
                      ["--ghcjs" | whichCompiler compilerVer == Ghcjs]
 
     let srcNames = T.intercalate " and " $
-          ["packages from " <> sdResolverName sd
+          ["packages from " <> snapshotName sd
               | not (Map.null snapConstraints)] ++
           [T.pack (show (Map.size extraConstraints) <> " external packages")
               | not (Map.null extraConstraints)]
@@ -463,7 +463,7 @@ solveResolverSpec cabalDirs
 getResolverConstraints
     :: (HasConfig env, HasGHCVariant env)
     => Maybe ActualCompiler -- ^ actually installed compiler
-    -> SnapshotDef
+    -> Snapshot
     -> RIO env
          (ActualCompiler,
           Map PackageName (Version, Map FlagName Bool))
@@ -613,7 +613,7 @@ solveExtraDeps modStackYaml = do
 
     logInfo $ "Using configuration file: " <> fromString relStackYaml
     packages <- view $ buildConfigL.to bcPackages
-    deps <- view $ buildConfigL.to bcDependencies
+    deps <- undefined -- view $ buildConfigL.to bcDependencies
     let noPkgMsg = "No cabal packages found in " <> relStackYaml <>
                    ". Please add at least one directory containing a .cabal \
                    \file. You can also use 'stack init' to automatically \
@@ -629,10 +629,10 @@ solveExtraDeps modStackYaml = do
     (bundle, _) <- cabalPackagesCheck cabalDirs noPkgMsg (Just dupPkgFooter)
 
     let gpds              = Map.elems $ fmap snd bundle
-        oldFlags          = bcFlags bconfig
+        oldFlags          = undefined -- bcFlags bconfig
     oldExtraVersions <- for deps $ fmap gpdVersion . liftIO . dpGPD'
-    let sd                = bcSnapshotDef bconfig
-        resolver          = sdResolver sd
+    let sd                = bcSnapshot bconfig
+        resolver          = undefined -- sdResolver sd
         oldSrcs           = gpdPackages gpds
         oldSrcFlags       = Map.intersection oldFlags oldSrcs
         oldExtraFlags     = Map.intersection oldFlags oldExtraVersions
@@ -651,7 +651,7 @@ solveExtraDeps modStackYaml = do
             -- TODO Solver should also use the init code to ignore incompatible
             -- packages
         BuildPlanCheckFail {} ->
-            throwM $ ResolverMismatch IsSolverCmd (sdResolverName sd) (show resolverResult)
+            throwM $ ResolverMismatch IsSolverCmd (snapshotName sd) (show resolverResult)
 
     (srcs, edeps) <- case resultSpecs of
         Nothing -> throwM (SolverGiveUp giveUpMsg)
